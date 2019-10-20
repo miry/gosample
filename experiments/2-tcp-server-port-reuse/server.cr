@@ -17,7 +17,7 @@ end
 
 name = "server"
 name = ARGV[0] if ARGV.size > 0
-server = TCPServer.new("0.0.0.0", 3000, reuse_port: true)
+server = TCPServer.new("0.0.0.0", 3000, reuse_port: false)
 log "Listen 3000\n", name
 while client = server.accept?
   spawn handle_client(name, client)

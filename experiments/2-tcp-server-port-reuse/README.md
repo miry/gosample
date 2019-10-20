@@ -1,7 +1,10 @@
 ## Multi process solutions
 
-Crystal could not use multiple cores. All calculations running on same core. To effectively use all cores for network application there are multiple solutions:
-1. Create a master-workers approach, where one process listen for incoming requests and then send requests to specific worker to process it.
+Crystal could not use multiple cores. All calculations running on same core.
+To effectively use all cores for network application there are multiple solutions:
+
+1. Create a master-workers approach, where one process listen for incoming requests and
+then send requests to specific worker to process it.
 2. Allow listen for same port to different processes. There is feature calls (reuse port)[https://lwn.net/Articles/542629/].
 
 ## Example
@@ -9,22 +12,32 @@ Crystal could not use multiple cores. All calculations running on same core. To 
 Try to run multiple application, that bind to same port:
 
 ```shell
-$ lsof -nP -iTCP:3000 | grep LISTEN
-$ crystal experiments/2-tcp-server-port-reuse/server.cr # Run first process
+[terminal 1] $ lsof -nP -iTCP:3000
+
+[terminal 1] $ crystal experiments/2-tcp-server-port-reuse/server.cr # Run first process
 Listen 3000
-$ lsof -nP -iTCP:3000 | grep LISTEN
-crystal-r 77323 miry   11u  IPv6 0x5ba3efab06a43411      0t0  TCP [::1]:3000 (LISTEN)
-$ crystal experiments/2-tcp-server-port-reuse/server.cr # Run second process
+
+[terminal 2] $ lsof -nP -iTCP:3000
+COMMAND     PID USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
+crystal-r 14082 miry   10u  IPv4 372204      0t0  TCP *:3000 (LISTEN)
+
+[terminal 3] $ crystal experiments/2-tcp-server-port-reuse/server.cr # Run second process
 Listen 3000
-$ lsof -nP -iTCP:3000 | grep LISTEN
-crystal-r 77323 miry   11u  IPv6 0x5ba3efab06a43411      0t0  TCP [::1]:3000 (LISTEN)
-crystal-r 77665 miry   11u  IPv6 0x5ba3efab06a45c51      0t0  TCP [fe80:1::1]:3000 (LISTEN)
-$ crystal experiments/2-tcp-server-port-reuse/server.cr # Run third process
+
+[terminal 4] $ lsof -nP -iTCP:3000
+COMMAND     PID USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
+crystal-r 14082 miry   10u  IPv4 372204      0t0  TCP *:3000 (LISTEN)
+crystal-r 14879 miry   10u  IPv4 373409      0t0  TCP *:3000 (LISTEN)
+
+[terminal 4] $ crystal experiments/2-tcp-server-port-reuse/server.cr # Run third process
 Listen 3000
+
 $ lsof -nP -iTCP:3000 | grep LISTEN
-crystal-r 77323 miry   11u  IPv6 0x5ba3efab06a43411      0t0  TCP [::1]:3000 (LISTEN)
-crystal-r 77665 miry   11u  IPv6 0x5ba3efab06a45c51      0t0  TCP [fe80:1::1]:3000 (LISTEN)
-crystal-r 77911 miry   11u  IPv4 0x5ba3efab11f0a859      0t0  TCP 127.0.0.1:3000 (LISTEN)
+COMMAND     PID USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
+crystal-r 14082 miry   10u  IPv4 372204      0t0  TCP *:3000 (LISTEN)
+crystal-r 14879 miry   10u  IPv4 373409      0t0  TCP *:3000 (LISTEN)
+crystal-r 15292 miry   10u  IPv4 370201      0t0  TCP *:3000 (LISTEN)
+
 $ crystal experiments/2-tcp-server-port-reuse/server.cr # Run forth process
 Unhandled exception: bind: Address already in use (Errno)
   from /usr/local/Cellar/crystal/0.27.0/src/socket/tcp_server.cr:73:15 in 'initialize'

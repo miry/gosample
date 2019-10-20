@@ -1,4 +1,4 @@
-FROM crystallang/crystal:0.27.0
+FROM crystallang/crystal:0.31.0
 
 WORKDIR /app
 ADD server.cr /app/
