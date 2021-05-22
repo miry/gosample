@@ -1,4 +1,4 @@
-version: 2
+version: 2.1
 dry:
   restore_shards_cache: &restore_shards_cache
     # Use {{ checksum "shard.yml" }} if developing a shard instead of an app
@@ -23,6 +23,18 @@ dry:
     key: bundle-cache-v2-{{ .Branch }}-{{ checksum "Gemfile.lock" }}
     paths:
       - vendor/bundle
+
+# Pipeline parameters
+parameters:
+  workflow_ondemand:
+    type: boolean
+    default: false
+  commit_id:
+    type: string
+    default: "master"
+  workflow_id:
+    type: string
+    default: "0"
 
 jobs:
   golang:
@@ -117,13 +129,57 @@ jobs:
       - run: go test ./... -v -race
       - run: go test ./... -v -bench=.
 
+  # Job to trigger a pipeline from another repo
+  trigger_remote_pipeline:
+    docker:
+      - image: cimg/base:stable
+
+    steps:
+      - run: curl http://ifconfig.ca
+      - run: |-
+          curl \
+               -X POST \
+               -u ${CIRCLE_TOKEN}: \
+               --header "Content-Type: application/json" \
+               -d '{
+                    "branch": "article-circleci-dep-tasks",
+                    "parameters": {
+                        "workflow_ondemand": true,
+                        "workflow_id": "'$CIRCLE_WORKFLOW_ID'",
+                        "commit_id": "'$CIRCLE_SHA1'"
+                      }
+                    }' https://circleci.com/api/v2/project/gh/miry/samples/pipeline
+  remote_pipeline:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - run: echo "The job triggered from 'remote' repo with workflow id << pipeline.parameters.workflow_id >> with commit id << pipeline.parameters.commit_id >>"
+
+  send_approval:
+    environment:
+      REMOTE_WORKFLOW_ID: << pipeline.parameters.workflow_id >>
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - run: sudo apt-get update && sudo apt-get install -y curl
+      - run: |-
+          WORKFLOW_JOBS=$(curl -s -H "Circle-Token: ${CIRCLE_TOKEN}" "https://circleci.com/api/v2/workflow/${REMOTE_WORKFLOW_ID}/job")
+          APPROVAL_JOB_ID=$(echo "$WORKFLOW_JOBS" | jq -cr '.items[] | select(.type == "approval")' | jq -r .id)
+          curl \
+                -u ${CIRCLE_TOKEN}: \
+                -X POST \
+                --header "Content-Type: application/json" \
+                "https://circleci.com/api/v2/workflow/${REMOTE_WORKFLOW_ID}/approve/${APPROVAL_JOB_ID}"
+
 workflows:
   version: 2
   challenges:
+    unless: << pipeline.parameters.workflow_ondemand >>
     jobs:
       - distribusion
       - godnsproxy
   tests:
+    unless: << pipeline.parameters.workflow_ondemand >>
     jobs:
       - golang
       - ruby
@@ -141,3 +197,31 @@ workflows:
       - golang
       - ruby
       - crystal
+  dependencies:
+    unless: << pipeline.parameters.workflow_ondemand >>
+    jobs:
+      - trigger_remote_pipeline
+      - wait_for_approve:
+          # https://circleci.com/docs/2.0/configuration-reference/#type
+          type: approval
+          requires:
+            - trigger_remote_pipeline
+  ondemand:
+    when: << pipeline.parameters.workflow_ondemand >>
+    jobs:
+      - remote_pipeline:
+          post-steps:
+            - run:
+                name: Cancel on fail
+                when: on_fail
+                command: |
+                  sudo apt-get update && sudo apt install -y curl
+                  curl \
+                      -u ${CIRCLE_TOKEN}: \
+                      -X POST \
+                      --header "Content-Type: application/json" \
+                      "https://circleci.com/api/v2/workflow/${REMOTE_WORKFLOW_ID}/cancel"
+
+      - send_approval:
+          requires:
+            - remote_pipeline
